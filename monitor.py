@@ -11,8 +11,6 @@ def continuous_monitor():
            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
            print(f"\n[{timestamp}] Running system check...")
            
-           result = run_crew()
-           
            print(f"[{timestamp}] Check completed")
            print("-" * 50)
            
