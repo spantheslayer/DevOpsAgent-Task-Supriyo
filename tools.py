@@ -8,6 +8,9 @@ import json
 from crewai import LLM
 from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD, SPIKE_DURATION_SECONDS
 from notifications import send_incident_alert, send_remediation_alert, send_comprehensive_incident_alert
+from logging_config import setup_logger
+
+logger = setup_logger('devops-agent')
 
 llm = LLM(
     model="gemini/gemini-1.5-flash",
@@ -274,6 +277,12 @@ System Overview:
         if issues:
             overview += f"\nSUSTAINED ISSUES DETECTED: {', '.join(sustained_issues)}"
             
+            logger.error("Sustained issues detected", extra={
+                'alert_type': 'incident',
+                'metrics': metrics,
+                'duration': max([get_spike_duration(issue.lower()) for issue in issues])
+            })
+            
             try:
                 result = subprocess.run(['journalctl', '--since', '5 minutes ago', '--no-pager'], 
                                       capture_output=True, text=True)
@@ -288,11 +297,25 @@ System Overview:
             metrics['auto_remediate'] = "Yes" if should_auto_remediate else "No"
             metrics['decision_reason'] = reason
             
+            logger.info("Root cause analysis completed", extra={
+                'alert_type': 'analysis',
+                'confidence': confidence,
+                'metrics': metrics
+            })
+            
             send_incident_alert(metrics, issues, analysis_text)
         elif current_spikes:
             overview += f"\nTRACKING POTENTIAL ISSUES: {', '.join(current_spikes)} (need {SPIKE_DURATION_SECONDS}s to trigger alert)"
+            logger.warning("Tracking potential issues", extra={
+                'alert_type': 'tracking',
+                'metrics': metrics
+            })
         else:
             overview += "\nAll systems normal"
+            logger.info("System status normal", extra={
+                'alert_type': 'status',
+                'metrics': metrics
+            })
             
         return overview
     except Exception as e:
@@ -408,6 +431,12 @@ def confidence_based_remediation():
         analysis_text, should_auto_remediate, confidence, reason = parse_confidence_decision(root_cause)
         
         if should_auto_remediate:
+            logger.info("Starting automatic remediation", extra={
+                'alert_type': 'remediation',
+                'confidence': confidence,
+                'metrics': metrics
+            })
+            
             pre_metrics = metrics.copy()
             remediation_result = system_remediation()
             
@@ -421,6 +450,11 @@ def confidence_based_remediation():
             
             metrics['confidence'] = confidence
             metrics['decision_reason'] = reason
+            
+            logger.info("Remediation completed", extra={
+                'alert_type': 'remediation',
+                'metrics': post_metrics
+            })
             
             send_comprehensive_incident_alert(
                 incident_metrics=metrics,
