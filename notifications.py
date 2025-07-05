@@ -81,3 +81,32 @@ def send_remediation_alert(status, pre_metrics, post_metrics):
         color,
         fields
     )
+
+def send_comprehensive_incident_alert(incident_metrics, issues, root_cause_analysis, remediation_status, pre_metrics, post_metrics, action_taken):
+    fields = [
+        {"title": "Incident Details", "value": f"Issues: {', '.join(issues)}", "short": False},
+        {"title": "CPU (Incident)", "value": f"{incident_metrics.get('cpu', 'N/A')}", "short": True},
+        {"title": "Memory (Incident)", "value": f"{incident_metrics.get('memory', 'N/A')}", "short": True},
+        {"title": "Disk (Incident)", "value": f"{incident_metrics.get('disk', 'N/A')}", "short": True},
+        {"title": "Network (Incident)", "value": f"{incident_metrics.get('network', 'N/A')}", "short": True},
+    ]
+    
+    if incident_metrics.get('confidence'):
+        fields.append({"title": "AI Confidence", "value": f"{incident_metrics.get('confidence')} - {incident_metrics.get('decision_reason', '')}", "short": False})
+    
+    fields.extend([
+        {"title": "Root Cause Analysis", "value": root_cause_analysis[:800], "short": False},
+        {"title": "Action Taken", "value": action_taken, "short": False},
+        {"title": "Remediation Status", "value": remediation_status, "short": True},
+        {"title": "Pre-Remediation", "value": f"CPU: {pre_metrics.get('cpu', 'N/A')}, Memory: {pre_metrics.get('memory', 'N/A')}", "short": True},
+        {"title": "Post-Remediation", "value": f"CPU: {post_metrics.get('cpu', 'N/A')}, Memory: {post_metrics.get('memory', 'N/A')}", "short": True}
+    ])
+    
+    color = "good" if "SUCCESS" in remediation_status else "warning"
+    
+    return send_slack_alert(
+        "DevOps Incident - Complete Report",
+        f"Incident detected, analyzed, {action_taken}, Status: {remediation_status}",
+        color,
+        fields
+    )

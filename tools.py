@@ -6,7 +6,7 @@ import psutil
 import os
 from crewai import LLM
 from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD, SPIKE_DURATION_SECONDS
-from notifications import send_incident_alert, send_remediation_alert
+from notifications import send_incident_alert, send_remediation_alert, send_comprehensive_incident_alert
 
 llm = LLM(
     model="gemini/gemini-1.5-flash",
@@ -381,7 +381,30 @@ def confidence_based_remediation():
         analysis_text, should_auto_remediate, confidence, reason = parse_confidence_decision(root_cause)
         
         if should_auto_remediate:
+            pre_metrics = metrics.copy()
             remediation_result = system_remediation()
+            
+            post_prometheus_data = get_prometheus_metrics()
+            post_metrics = {
+                'cpu': f"{post_prometheus_data['cpu_value']:.2f}%",
+                'memory': f"{post_prometheus_data['memory_value']:.2f}%",
+                'disk': f"{post_prometheus_data['disk_value']:.2f}%",
+                'network': f"{post_prometheus_data['network_value']:.2f} MB"
+            }
+            
+            metrics['confidence'] = confidence
+            metrics['decision_reason'] = reason
+            
+            send_comprehensive_incident_alert(
+                incident_metrics=metrics,
+                issues=issues,
+                root_cause_analysis=analysis_text,
+                remediation_status="SUCCESS" if "SUCCESS" in remediation_result else "FAILED",
+                pre_metrics=pre_metrics,
+                post_metrics=post_metrics,
+                action_taken="Docker service restarted automatically"
+            )
+            
             return f"""
 CONFIDENCE-BASED REMEDIATION EXECUTED
 
@@ -393,6 +416,19 @@ AI Assessment:
 {remediation_result}
 """
         else:
+            metrics['confidence'] = confidence
+            metrics['decision_reason'] = reason
+            
+            send_comprehensive_incident_alert(
+                incident_metrics=metrics,
+                issues=issues,
+                root_cause_analysis=analysis_text,
+                remediation_status="SKIPPED - Human intervention required",
+                pre_metrics=metrics,
+                post_metrics=metrics,
+                action_taken="No automatic action taken due to low confidence"
+            )
+            
             return f"""
 HUMAN INTERVENTION REQUIRED
 
