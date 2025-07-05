@@ -13,6 +13,51 @@ llm = LLM(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
+def extract_metric_value(result_string):
+    try:
+        return float(result_string.split(': ')[1].rstrip('%'))
+    except:
+        return 0.0
+
+def get_prometheus_metrics():
+    try:
+        cpu_result = prometheus_monitor()
+        memory_result = memory_monitor()
+        disk_result = disk_monitor()
+        network_result = network_monitor()
+        
+        cpu_value = extract_metric_value(cpu_result)
+        memory_value = extract_metric_value(memory_result)
+        disk_value = extract_metric_value(disk_result)
+        network_value = extract_metric_value(network_result.replace(' Mbps', ''))
+        
+        return {
+            'cpu_result': cpu_result,
+            'memory_result': memory_result,
+            'disk_result': disk_result,
+            'network_result': network_result,
+            'cpu_value': cpu_value,
+            'memory_value': memory_value,
+            'disk_value': disk_value,
+            'network_value': network_value
+        }
+    except Exception as e:
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        
+        return {
+            'cpu_result': f"CPU {'spike detected' if cpu_usage > CPU_THRESHOLD else 'normal'}: {cpu_usage:.2f}%",
+            'memory_result': f"Memory {'spike detected' if memory.percent > MEMORY_THRESHOLD else 'normal'}: {memory.percent:.2f}%",
+            'disk_result': f"Disk {'spike detected' if disk.percent > DISK_THRESHOLD else 'normal'}: {disk.percent:.2f}%",
+            'network_result': f"Network normal: {network.bytes_sent/1024/1024:.2f} MB sent",
+            'cpu_value': cpu_usage,
+            'memory_value': memory.percent,
+            'disk_value': disk.percent,
+            'network_value': network.bytes_sent/1024/1024
+        }
+
 def generate_root_cause_analysis(metrics, issues, system_logs=""):
     try:
         prompt = f"""
@@ -102,42 +147,34 @@ def network_monitor():
 def system_overview():
     """Get comprehensive system metrics overview and send Slack alerts if issues detected"""
     try:
-        cpu_usage = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        network = psutil.net_io_counters()
-        
-        cpu_result = f"CPU spike detected: {cpu_usage:.2f}%" if cpu_usage > CPU_THRESHOLD else f"CPU normal: {cpu_usage:.2f}%"
-        memory_result = f"Memory spike detected: {memory.percent:.2f}%" if memory.percent > MEMORY_THRESHOLD else f"Memory normal: {memory.percent:.2f}%"
-        disk_result = f"Disk spike detected: {disk.percent:.2f}%" if disk.percent > DISK_THRESHOLD else f"Disk normal: {disk.percent:.2f}%"
-        network_result = f"Network normal: {network.bytes_sent/1024/1024:.2f} MB sent"
+        prometheus_data = get_prometheus_metrics()
         
         overview = f"""
 System Overview:
-{cpu_result}
-{memory_result}
-{disk_result}
-{network_result}
+{prometheus_data['cpu_result']}
+{prometheus_data['memory_result']}
+{prometheus_data['disk_result']}
+{prometheus_data['network_result']}
 """
         
         issues = []
         metrics = {
-            'cpu': f"{cpu_usage:.2f}%",
-            'memory': f"{memory.percent:.2f}%",
-            'disk': f"{disk.percent:.2f}%",
-            'network': f"{network.bytes_sent/1024/1024:.2f} MB"
+            'cpu': f"{prometheus_data['cpu_value']:.2f}%",
+            'memory': f"{prometheus_data['memory_value']:.2f}%",
+            'disk': f"{prometheus_data['disk_value']:.2f}%",
+            'network': f"{prometheus_data['network_value']:.2f} MB"
         }
         
-        if cpu_usage > CPU_THRESHOLD:
+        if prometheus_data['cpu_value'] > CPU_THRESHOLD:
             issues.append("CPU")
             
-        if memory.percent > MEMORY_THRESHOLD:
+        if prometheus_data['memory_value'] > MEMORY_THRESHOLD:
             issues.append("Memory")
             
-        if disk.percent > DISK_THRESHOLD:
+        if prometheus_data['disk_value'] > DISK_THRESHOLD:
             issues.append("Disk")
             
-        if network.bytes_sent/1024/1024 > NETWORK_THRESHOLD:
+        if prometheus_data['network_value'] > NETWORK_THRESHOLD:
             issues.append("Network")
         
         if issues:
