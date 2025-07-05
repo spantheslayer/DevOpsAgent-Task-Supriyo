@@ -3,8 +3,44 @@ import requests
 import subprocess
 import time
 import psutil
+import os
+from crewai import LLM
 from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD
 from notifications import send_incident_alert, send_remediation_alert
+
+llm = LLM(
+    model="gemini/gemini-1.5-flash",
+    api_key=os.getenv("GEMINI_API_KEY")
+)
+
+def generate_root_cause_analysis(metrics, issues, system_logs=""):
+    try:
+        prompt = f"""
+Analyze the following system metrics and provide a concise root cause analysis:
+
+System Metrics:
+- CPU: {metrics.get('cpu', 'N/A')}
+- Memory: {metrics.get('memory', 'N/A')}
+- Disk: {metrics.get('disk', 'N/A')}
+- Network: {metrics.get('network', 'N/A')}
+
+Issues Detected: {', '.join(issues)}
+
+System Logs (Recent):
+{system_logs[:500] if system_logs else "No recent logs available"}
+
+Provide a brief root cause analysis (max 150 words) focusing on:
+1. Most likely cause of the issues
+2. Immediate impact
+3. Recommended next steps
+
+Keep it concise and actionable for operations teams.
+"""
+        
+        response = llm.invoke(prompt)
+        return response.strip()
+    except Exception as e:
+        return f"Root cause analysis failed: {str(e)}"
 
 @tool
 def prometheus_monitor():
@@ -106,7 +142,16 @@ System Overview:
         
         if issues:
             overview += f"\nISSUES DETECTED: {', '.join(issues)}"
-            send_incident_alert(metrics, issues, "System metrics exceeded defined thresholds")
+            
+            try:
+                result = subprocess.run(['journalctl', '--since', '5 minutes ago', '--no-pager'], 
+                                      capture_output=True, text=True)
+                system_logs = result.stdout
+            except:
+                system_logs = ""
+            
+            root_cause = generate_root_cause_analysis(metrics, issues, system_logs)
+            send_incident_alert(metrics, issues, root_cause)
         else:
             overview += "\nAll systems normal"
             
