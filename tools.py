@@ -2,6 +2,7 @@ from crewai.tools import tool
 import requests
 import subprocess
 import time
+import psutil
 from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD
 from notifications import send_incident_alert, send_remediation_alert
 
@@ -130,8 +131,17 @@ def log_analyzer():
 def system_remediation():
     """Restart services and verify system health with Slack notifications"""
     try:
-        pre_overview = system_overview()
-        pre_metrics = {}
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        
+        pre_metrics = {
+            'cpu': f"{cpu_usage:.2f}%",
+            'memory': f"{memory.percent:.2f}%",
+            'disk': f"{disk.percent:.2f}%",
+            'network': f"{network.bytes_sent/1024/1024:.2f} MB"
+        }
         
         restart_result = subprocess.run(['sudo', 'systemctl', 'restart', 'docker'], 
                                       capture_output=True, text=True)
@@ -145,8 +155,25 @@ def system_remediation():
                                      capture_output=True, text=True)
         service_status = status_result.stdout.strip()
         
-        post_overview = system_overview()
-        post_metrics = {}
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        
+        post_metrics = {
+            'cpu': f"{cpu_usage:.2f}%",
+            'memory': f"{memory.percent:.2f}%",
+            'disk': f"{disk.percent:.2f}%",
+            'network': f"{network.bytes_sent/1024/1024:.2f} MB"
+        }
+        
+        post_overview = f"""
+System Overview:
+CPU: {cpu_usage:.2f}%
+Memory: {memory.percent:.2f}%
+Disk: {disk.percent:.2f}%
+Network: {network.bytes_sent/1024/1024:.2f} MB sent
+"""
         
         verification_report = f"""
 Service Restart: SUCCESS
