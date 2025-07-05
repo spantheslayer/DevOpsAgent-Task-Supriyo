@@ -4,14 +4,14 @@ import os
 from dotenv import load_dotenv
 from crewai import Crew
 from agents import detection_agent, remediation_agent
-from tasks import cpu_monitoring_task, remediation_task
+from tasks import monitoring_task, remediation_task
 
 load_dotenv()
 
 def main():
    crew = Crew(
        agents=[detection_agent, remediation_agent],
-       tasks=[cpu_monitoring_task, remediation_task],
+       tasks=[monitoring_task, remediation_task],
        verbose=True
    )
    
