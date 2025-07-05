@@ -65,10 +65,15 @@ def network_monitor():
 def system_overview():
     """Get comprehensive system metrics overview"""
     try:
-        cpu_result = prometheus_monitor()
-        memory_result = memory_monitor()
-        disk_result = disk_monitor()
-        network_result = network_monitor()
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        
+        cpu_result = f"CPU spike detected: {cpu_usage:.2f}%" if cpu_usage > CPU_THRESHOLD else f"CPU normal: {cpu_usage:.2f}%"
+        memory_result = f"Memory spike detected: {memory.percent:.2f}%" if memory.percent > MEMORY_THRESHOLD else f"Memory normal: {memory.percent:.2f}%"
+        disk_result = f"Disk spike detected: {disk.percent:.2f}%" if disk.percent > DISK_THRESHOLD else f"Disk normal: {disk.percent:.2f}%"
+        network_result = f"Network normal: {network.bytes_sent/1024/1024:.2f} MB sent"
         
         overview = f"""
 System Overview:
@@ -128,7 +133,18 @@ def system_remediation():
         service_status = status_result.stdout.strip()
         
         # Detailed system metrics
-        overview = system_overview()
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        
+        overview = f"""
+System Overview:
+CPU: {cpu_usage:.2f}%
+Memory: {memory.percent:.2f}%
+Disk: {disk.percent:.2f}%
+Network: {network.bytes_sent/1024/1024:.2f} MB sent
+"""
         
         verification_report = f"""
 Service Restart: SUCCESS
