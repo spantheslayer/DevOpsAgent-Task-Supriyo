@@ -2,8 +2,8 @@ from crewai.tools import tool
 import requests
 import subprocess
 import time
-import psutil
 from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD
+from notifications import send_incident_alert, send_remediation_alert
 
 @tool
 def prometheus_monitor():
@@ -63,17 +63,12 @@ def network_monitor():
 
 @tool
 def system_overview():
-    """Get comprehensive system metrics overview"""
+    """Get comprehensive system metrics overview and send Slack alerts if issues detected"""
     try:
-        cpu_usage = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        network = psutil.net_io_counters()
-        
-        cpu_result = f"CPU spike detected: {cpu_usage:.2f}%" if cpu_usage > CPU_THRESHOLD else f"CPU normal: {cpu_usage:.2f}%"
-        memory_result = f"Memory spike detected: {memory.percent:.2f}%" if memory.percent > MEMORY_THRESHOLD else f"Memory normal: {memory.percent:.2f}%"
-        disk_result = f"Disk spike detected: {disk.percent:.2f}%" if disk.percent > DISK_THRESHOLD else f"Disk normal: {disk.percent:.2f}%"
-        network_result = f"Network normal: {network.bytes_sent/1024/1024:.2f} MB sent"
+        cpu_result = prometheus_monitor()
+        memory_result = memory_monitor()
+        disk_result = disk_monitor()
+        network_result = network_monitor()
         
         overview = f"""
 System Overview:
@@ -83,19 +78,36 @@ System Overview:
 {network_result}
 """
         
-        # Check if any metric exceeds threshold
         issues = []
+        metrics = {}
+        
         if "spike detected" in cpu_result:
             issues.append("CPU")
+            metrics['cpu'] = cpu_result.split(': ')[1]
+        else:
+            metrics['cpu'] = cpu_result.split(': ')[1]
+            
         if "spike detected" in memory_result:
             issues.append("Memory")
+            metrics['memory'] = memory_result.split(': ')[1]
+        else:
+            metrics['memory'] = memory_result.split(': ')[1]
+            
         if "spike detected" in disk_result:
             issues.append("Disk")
+            metrics['disk'] = disk_result.split(': ')[1]
+        else:
+            metrics['disk'] = disk_result.split(': ')[1]
+            
         if "spike detected" in network_result:
             issues.append("Network")
+            metrics['network'] = network_result.split(': ')[1]
+        else:
+            metrics['network'] = network_result.split(': ')[1]
         
         if issues:
             overview += f"\nISSUES DETECTED: {', '.join(issues)}"
+            send_incident_alert(metrics, issues, "System metrics exceeded defined thresholds")
         else:
             overview += "\nAll systems normal"
             
@@ -116,9 +128,11 @@ def log_analyzer():
 
 @tool
 def system_remediation():
-    """Restart services and verify system health"""
+    """Restart services and verify system health with Slack notifications"""
     try:
-        # Restart Docker 
+        pre_overview = system_overview()
+        pre_metrics = {}
+        
         restart_result = subprocess.run(['sudo', 'systemctl', 'restart', 'docker'], 
                                       capture_output=True, text=True)
         
@@ -127,32 +141,22 @@ def system_remediation():
         
         time.sleep(5)
         
-        # Verify service status
         status_result = subprocess.run(['sudo', 'systemctl', 'is-active', 'docker'], 
                                      capture_output=True, text=True)
         service_status = status_result.stdout.strip()
         
-        # Detailed system metrics
-        cpu_usage = psutil.cpu_percent(interval=1)
-        memory = psutil.virtual_memory()
-        disk = psutil.disk_usage('/')
-        network = psutil.net_io_counters()
-        
-        overview = f"""
-System Overview:
-CPU: {cpu_usage:.2f}%
-Memory: {memory.percent:.2f}%
-Disk: {disk.percent:.2f}%
-Network: {network.bytes_sent/1024/1024:.2f} MB sent
-"""
+        post_overview = system_overview()
+        post_metrics = {}
         
         verification_report = f"""
 Service Restart: SUCCESS
 Docker Status: {service_status}
 Post-restart System Status:
-{overview}
+{post_overview}
 System Stability: VERIFIED
 """
+        
+        send_remediation_alert("SUCCESS - Docker restarted", pre_metrics, post_metrics)
         
         return verification_report
         
