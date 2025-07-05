@@ -5,13 +5,35 @@ import time
 import psutil
 import os
 from crewai import LLM
-from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD
+from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD, SPIKE_DURATION_SECONDS
 from notifications import send_incident_alert, send_remediation_alert
 
 llm = LLM(
     model="gemini/gemini-1.5-flash",
     api_key=os.getenv("GEMINI_API_KEY")
 )
+
+spike_start_times = {}
+
+def check_sustained_spike(metric_name, current_value, threshold):
+    current_time = time.time()
+    
+    if current_value > threshold:
+        if metric_name not in spike_start_times:
+            spike_start_times[metric_name] = current_time
+            return False
+        elif current_time - spike_start_times[metric_name] >= SPIKE_DURATION_SECONDS:
+            return True
+        else:
+            return False
+    else:
+        spike_start_times.pop(metric_name, None)
+        return False
+
+def get_spike_duration(metric_name):
+    if metric_name in spike_start_times:
+        return int(time.time() - spike_start_times[metric_name])
+    return 0
 
 def extract_metric_value(result_string):
     try:
@@ -165,20 +187,36 @@ System Overview:
             'network': f"{prometheus_data['network_value']:.2f} MB"
         }
         
-        if prometheus_data['cpu_value'] > CPU_THRESHOLD:
+        sustained_issues = []
+        
+        if check_sustained_spike('cpu', prometheus_data['cpu_value'], CPU_THRESHOLD):
             issues.append("CPU")
+            sustained_issues.append(f"CPU (sustained {get_spike_duration('cpu')}s)")
             
-        if prometheus_data['memory_value'] > MEMORY_THRESHOLD:
+        if check_sustained_spike('memory', prometheus_data['memory_value'], MEMORY_THRESHOLD):
             issues.append("Memory")
+            sustained_issues.append(f"Memory (sustained {get_spike_duration('memory')}s)")
             
-        if prometheus_data['disk_value'] > DISK_THRESHOLD:
+        if check_sustained_spike('disk', prometheus_data['disk_value'], DISK_THRESHOLD):
             issues.append("Disk")
+            sustained_issues.append(f"Disk (sustained {get_spike_duration('disk')}s)")
             
-        if prometheus_data['network_value'] > NETWORK_THRESHOLD:
+        if check_sustained_spike('network', prometheus_data['network_value'], NETWORK_THRESHOLD):
             issues.append("Network")
+            sustained_issues.append(f"Network (sustained {get_spike_duration('network')}s)")
+        
+        current_spikes = []
+        if prometheus_data['cpu_value'] > CPU_THRESHOLD and 'cpu' in spike_start_times and 'CPU' not in issues:
+            current_spikes.append(f"CPU tracking ({get_spike_duration('cpu')}s)")
+        if prometheus_data['memory_value'] > MEMORY_THRESHOLD and 'memory' in spike_start_times and 'Memory' not in issues:
+            current_spikes.append(f"Memory tracking ({get_spike_duration('memory')}s)")
+        if prometheus_data['disk_value'] > DISK_THRESHOLD and 'disk' in spike_start_times and 'Disk' not in issues:
+            current_spikes.append(f"Disk tracking ({get_spike_duration('disk')}s)")
+        if prometheus_data['network_value'] > NETWORK_THRESHOLD and 'network' in spike_start_times and 'Network' not in issues:
+            current_spikes.append(f"Network tracking ({get_spike_duration('network')}s)")
         
         if issues:
-            overview += f"\nISSUES DETECTED: {', '.join(issues)}"
+            overview += f"\nSUSTAINED ISSUES DETECTED: {', '.join(sustained_issues)}"
             
             try:
                 result = subprocess.run(['journalctl', '--since', '5 minutes ago', '--no-pager'], 
@@ -189,6 +227,8 @@ System Overview:
             
             root_cause = generate_root_cause_analysis(metrics, issues, system_logs)
             send_incident_alert(metrics, issues, root_cause)
+        elif current_spikes:
+            overview += f"\nTRACKING POTENTIAL ISSUES: {', '.join(current_spikes)} (need {SPIKE_DURATION_SECONDS}s to trigger alert)"
         else:
             overview += "\nAll systems normal"
             
