@@ -4,6 +4,7 @@ import subprocess
 import time
 import psutil
 import os
+import json
 from crewai import LLM
 from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD, SPIKE_DURATION_SECONDS
 from notifications import send_incident_alert, send_remediation_alert, send_comprehensive_incident_alert
@@ -13,26 +14,45 @@ llm = LLM(
     api_key=os.getenv("GEMINI_API_KEY")
 )
 
-spike_start_times = {}
+SPIKE_TRACKING_FILE = "/tmp/devops_spike_tracking.json"
+
+def load_spike_times():
+    try:
+        with open(SPIKE_TRACKING_FILE, 'r') as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_spike_times(spike_times):
+    try:
+        with open(SPIKE_TRACKING_FILE, 'w') as f:
+            json.dump(spike_times, f)
+    except:
+        pass
 
 def check_sustained_spike(metric_name, current_value, threshold):
     current_time = time.time()
+    spike_times = load_spike_times()
     
     if current_value > threshold:
-        if metric_name not in spike_start_times:
-            spike_start_times[metric_name] = current_time
+        if metric_name not in spike_times:
+            spike_times[metric_name] = current_time
+            save_spike_times(spike_times)
             return False
-        elif current_time - spike_start_times[metric_name] >= SPIKE_DURATION_SECONDS:
+        elif current_time - spike_times[metric_name] >= SPIKE_DURATION_SECONDS:
             return True
         else:
             return False
     else:
-        spike_start_times.pop(metric_name, None)
+        if metric_name in spike_times:
+            del spike_times[metric_name]
+            save_spike_times(spike_times)
         return False
 
 def get_spike_duration(metric_name):
-    if metric_name in spike_start_times:
-        return int(time.time() - spike_start_times[metric_name])
+    spike_times = load_spike_times()
+    if metric_name in spike_times:
+        return int(time.time() - spike_times[metric_name])
     return 0
 
 def extract_metric_value(result_string):
@@ -241,13 +261,14 @@ System Overview:
             sustained_issues.append(f"Network (sustained {get_spike_duration('network')}s)")
         
         current_spikes = []
-        if prometheus_data['cpu_value'] > CPU_THRESHOLD and 'cpu' in spike_start_times and 'CPU' not in issues:
+        spike_times = load_spike_times()
+        if prometheus_data['cpu_value'] > CPU_THRESHOLD and 'cpu' in spike_times and 'CPU' not in issues:
             current_spikes.append(f"CPU tracking ({get_spike_duration('cpu')}s)")
-        if prometheus_data['memory_value'] > MEMORY_THRESHOLD and 'memory' in spike_start_times and 'Memory' not in issues:
+        if prometheus_data['memory_value'] > MEMORY_THRESHOLD and 'memory' in spike_times and 'Memory' not in issues:
             current_spikes.append(f"Memory tracking ({get_spike_duration('memory')}s)")
-        if prometheus_data['disk_value'] > DISK_THRESHOLD and 'disk' in spike_start_times and 'Disk' not in issues:
+        if prometheus_data['disk_value'] > DISK_THRESHOLD and 'disk' in spike_times and 'Disk' not in issues:
             current_spikes.append(f"Disk tracking ({get_spike_duration('disk')}s)")
-        if prometheus_data['network_value'] > NETWORK_THRESHOLD and 'network' in spike_start_times and 'Network' not in issues:
+        if prometheus_data['network_value'] > NETWORK_THRESHOLD and 'network' in spike_times and 'Network' not in issues:
             current_spikes.append(f"Network tracking ({get_spike_duration('network')}s)")
         
         if issues:
