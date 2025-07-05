@@ -113,14 +113,13 @@ def log_analyzer():
 def system_remediation():
     """Restart services and verify system health"""
     try:
-        # Restart Docker service
+        # Restart Docker 
         restart_result = subprocess.run(['sudo', 'systemctl', 'restart', 'docker'], 
                                       capture_output=True, text=True)
         
         if restart_result.returncode != 0:
             return f"Restart failed: {restart_result.stderr}"
         
-        # Wait for service to stabilize
         time.sleep(5)
         
         # Verify service status
@@ -128,7 +127,7 @@ def system_remediation():
                                      capture_output=True, text=True)
         service_status = status_result.stdout.strip()
         
-        # Get comprehensive system metrics
+        # Detailed system metrics
         overview = system_overview()
         
         verification_report = f"""
