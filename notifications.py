@@ -105,7 +105,7 @@ def send_comprehensive_incident_alert(incident_metrics, issues, root_cause_analy
     color = "good" if "SUCCESS" in remediation_status else "warning"
     
     return send_slack_alert(
-        "DevOps Incident - Complete Report",
+        "System Incident - Detected Issues Report",
         f"Incident detected, analyzed, {action_taken}, Status: {remediation_status}",
         color,
         fields

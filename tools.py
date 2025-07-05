@@ -110,6 +110,8 @@ Confidence Guidelines:
 - High: Clear error patterns, known issues, single service affected
 - Medium: Some uncertainty but manageable risk
 - Low: Unclear cause, multiple systems affected, potential data risk
+
+Do not use markdown formatting, asterisks, or headers in your response.
 """
         
         response = llm.call(prompt)
@@ -124,6 +126,7 @@ def parse_confidence_decision(analysis_text):
         recommendation = "HUMAN_INTERVENTION"
         reason = "Analysis parsing failed"
         
+        clean_analysis_lines = []
         for line in lines:
             if line.startswith('CONFIDENCE:'):
                 confidence = line.split(':', 1)[1].strip()
@@ -131,9 +134,12 @@ def parse_confidence_decision(analysis_text):
                 recommendation = line.split(':', 1)[1].strip()
             elif line.startswith('REASON:'):
                 reason = line.split(':', 1)[1].strip()
+            elif line.strip() and line.strip() != "Analysis:":
+                clean_analysis_lines.append(line)
         
+        clean_analysis = '\n'.join(clean_analysis_lines).strip()
         auto_remediate = recommendation == "AUTO_REMEDIATE" and confidence in ["High", "Medium"]
-        return analysis_text, auto_remediate, confidence, reason
+        return clean_analysis, auto_remediate, confidence, reason
         
     except Exception as e:
         return analysis_text, False, "Low", f"Parsing error: {str(e)}"
