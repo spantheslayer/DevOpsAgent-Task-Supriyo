@@ -37,7 +37,7 @@ Provide a brief root cause analysis (max 150 words) focusing on:
 Keep it concise and actionable for operations teams.
 """
         
-        response = llm.invoke(prompt)
+        response = llm.call(prompt)
         return response.strip()
     except Exception as e:
         return f"Root cause analysis failed: {str(e)}"
