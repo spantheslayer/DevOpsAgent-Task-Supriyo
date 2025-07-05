@@ -1,26 +1,32 @@
 import time
-import threading
+from datetime import datetime
 from main import main as run_crew
-from tools import prometheus_monitor
 
 def continuous_monitor():
-   print("Starting continuous monitoring...")
+   print("Starting continuous DevOps monitoring (every 60 seconds)...")
+   print("Press Ctrl+C to stop")
+   
    while True:
        try:
-           cpu_result = prometheus_monitor()
-           print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {cpu_result}")
+           timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+           print(f"\n[{timestamp}] Running system check...")
            
-           if "spike detected" in cpu_result.lower():
-               print("CPU spike detected! Triggering AI agent...")
-               run_crew()
+           result = run_crew()
            
-           time.sleep(1)
+           print(f"[{timestamp}] Check completed")
+           print("-" * 50)
+           
+           time.sleep(60)
+           
        except KeyboardInterrupt:
-           print("Monitoring stopped")
+           print("\nMonitoring stopped by user")
            break
        except Exception as e:
-           print(f"Monitor error: {e}")
-           time.sleep(1)
+           timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+           print(f"[{timestamp}] Monitor error: {e}")
+           print("Retrying in 60 seconds...")
+           time.sleep(60)
 
 if __name__ == "__main__":
    continuous_monitor()
+
