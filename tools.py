@@ -3,6 +3,7 @@ import requests
 import subprocess
 import time
 import psutil
+from config import CPU_THRESHOLD
 
 @tool
 def prometheus_monitor():
@@ -12,7 +13,7 @@ def prometheus_monitor():
         data = response.json()
         cpu_usage = float(data['data']['result'][0]['value'][1])
         
-        if cpu_usage > 30:
+        if cpu_usage > CPU_THRESHOLD:
             return f"CPU spike detected: {cpu_usage:.2f}%"
         return f"CPU normal: {cpu_usage:.2f}%"
     except Exception as e:
