@@ -50,8 +50,12 @@ def send_incident_alert(metrics, issues, log_analysis=""):
         {"title": "Issues Detected", "value": ", ".join(issues), "short": False}
     ]
     
+    if metrics.get('confidence'):
+        fields.append({"title": "AI Confidence", "value": f"{metrics.get('confidence')} - {metrics.get('decision_reason', '')}", "short": True})
+        fields.append({"title": "Auto-Remediate", "value": metrics.get('auto_remediate', 'Unknown'), "short": True})
+    
     if log_analysis:
-        fields.append({"title": "Root Cause", "value": log_analysis[:1000], "short": False})
+        fields.append({"title": "Root Cause Analysis", "value": log_analysis[:1000], "short": False})
     
     return send_slack_alert(
         "System Alert - Issues Detected",

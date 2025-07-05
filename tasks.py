@@ -9,7 +9,7 @@ monitoring_task = Task(
 )
 
 remediation_task = Task(
-    description=f'Only execute if previous task detected actual issues above thresholds. Restart Docker service, verify all system metrics (CPU, memory, disk, network) returned to normal levels, and provide comprehensive verification report.',
+    description=f'Only execute if previous task detected actual issues above thresholds AND the AI confidence assessment recommends AUTO_REMEDIATE. If confidence is Low or HUMAN_INTERVENTION is recommended, do not restart services - instead request human intervention. If auto-remediation is approved, restart Docker service, verify all system metrics returned to normal levels, and provide comprehensive verification report.',
     agent=remediation_agent,
-    expected_output='Complete remediation report with restart status and verification of all system metrics returning to normal levels'
+    expected_output='Complete remediation report with restart status and verification of all system metrics returning to normal levels. If human intervention is required due to low confidence, clearly state this and do not perform auto-remediation.'
 )

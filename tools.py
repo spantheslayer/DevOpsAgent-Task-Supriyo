@@ -83,7 +83,7 @@ def get_prometheus_metrics():
 def generate_root_cause_analysis(metrics, issues, system_logs=""):
     try:
         prompt = f"""
-Analyze the following system metrics and provide a concise root cause analysis:
+Analyze the following system metrics and provide a concise root cause analysis with confidence assessment:
 
 System Metrics:
 - CPU: {metrics.get('cpu', 'N/A')}
@@ -96,18 +96,47 @@ Issues Detected: {', '.join(issues)}
 System Logs (Recent):
 {system_logs[:500] if system_logs else "No recent logs available"}
 
-Provide a brief analysis (max 150 words) focusing on:
+Provide analysis (max 150 words) with:
 1. Most likely cause of the issues
 2. Immediate impact
-3. Recommended next steps
+3. Confidence assessment
 
-Keep it concise and actionable for operations teams.
+Then provide your recommendation in this exact format:
+CONFIDENCE: [High/Medium/Low]
+RECOMMENDATION: [AUTO_REMEDIATE/HUMAN_INTERVENTION]
+REASON: [Brief explanation for confidence level]
+
+Confidence Guidelines:
+- High: Clear error patterns, known issues, single service affected
+- Medium: Some uncertainty but manageable risk
+- Low: Unclear cause, multiple systems affected, potential data risk
 """
         
         response = llm.call(prompt)
         return response.strip()
     except Exception as e:
-        return f"Root cause analysis failed: {str(e)}"
+        return f"Root cause analysis failed: {str(e)}", False
+
+def parse_confidence_decision(analysis_text):
+    try:
+        lines = analysis_text.split('\n')
+        confidence = "Low"
+        recommendation = "HUMAN_INTERVENTION"
+        reason = "Analysis parsing failed"
+        
+        for line in lines:
+            if line.startswith('CONFIDENCE:'):
+                confidence = line.split(':', 1)[1].strip()
+            elif line.startswith('RECOMMENDATION:'):
+                recommendation = line.split(':', 1)[1].strip()
+            elif line.startswith('REASON:'):
+                reason = line.split(':', 1)[1].strip()
+        
+        auto_remediate = recommendation == "AUTO_REMEDIATE" and confidence in ["High", "Medium"]
+        return analysis_text, auto_remediate, confidence, reason
+        
+    except Exception as e:
+        return analysis_text, False, "Low", f"Parsing error: {str(e)}"
 
 @tool
 def prometheus_monitor():
@@ -226,7 +255,13 @@ System Overview:
                 system_logs = ""
             
             root_cause = generate_root_cause_analysis(metrics, issues, system_logs)
-            send_incident_alert(metrics, issues, root_cause)
+            analysis_text, should_auto_remediate, confidence, reason = parse_confidence_decision(root_cause)
+            
+            metrics['confidence'] = confidence
+            metrics['auto_remediate'] = "Yes" if should_auto_remediate else "No"
+            metrics['decision_reason'] = reason
+            
+            send_incident_alert(metrics, issues, analysis_text)
         elif current_spikes:
             overview += f"\nTRACKING POTENTIAL ISSUES: {', '.join(current_spikes)} (need {SPIKE_DURATION_SECONDS}s to trigger alert)"
         else:
@@ -309,3 +344,71 @@ System Stability: VERIFIED
         
     except Exception as e:
         return f"Error during remediation: {str(e)}"
+
+@tool
+def confidence_based_remediation():
+    """Check AI confidence and perform remediation only if confidence is high enough"""
+    try:
+        prometheus_data = get_prometheus_metrics()
+        issues = []
+        metrics = {
+            'cpu': f"{prometheus_data['cpu_value']:.2f}%",
+            'memory': f"{prometheus_data['memory_value']:.2f}%",
+            'disk': f"{prometheus_data['disk_value']:.2f}%",
+            'network': f"{prometheus_data['network_value']:.2f} MB"
+        }
+        
+        if prometheus_data['cpu_value'] > CPU_THRESHOLD:
+            issues.append("CPU")
+        if prometheus_data['memory_value'] > MEMORY_THRESHOLD:
+            issues.append("Memory")
+        if prometheus_data['disk_value'] > DISK_THRESHOLD:
+            issues.append("Disk")
+        if prometheus_data['network_value'] > NETWORK_THRESHOLD:
+            issues.append("Network")
+        
+        if not issues:
+            return "No issues detected - remediation not needed"
+        
+        try:
+            result = subprocess.run(['journalctl', '--since', '5 minutes ago', '--no-pager'], 
+                                  capture_output=True, text=True)
+            system_logs = result.stdout
+        except:
+            system_logs = ""
+        
+        root_cause = generate_root_cause_analysis(metrics, issues, system_logs)
+        analysis_text, should_auto_remediate, confidence, reason = parse_confidence_decision(root_cause)
+        
+        if should_auto_remediate:
+            remediation_result = system_remediation()
+            return f"""
+CONFIDENCE-BASED REMEDIATION EXECUTED
+
+AI Assessment:
+- Confidence: {confidence}
+- Decision: AUTO_REMEDIATE
+- Reason: {reason}
+
+{remediation_result}
+"""
+        else:
+            return f"""
+HUMAN INTERVENTION REQUIRED
+
+AI Assessment:
+- Confidence: {confidence}
+- Decision: HUMAN_INTERVENTION
+- Reason: {reason}
+
+Issues Detected: {', '.join(issues)}
+Current Metrics: {metrics}
+
+Root Cause Analysis:
+{analysis_text}
+
+RECOMMENDATION: Operations team should manually investigate before taking remediation actions.
+"""
+        
+    except Exception as e:
+        return f"Error in confidence-based remediation: {str(e)}"
