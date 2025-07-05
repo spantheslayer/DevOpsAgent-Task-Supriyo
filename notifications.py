@@ -51,7 +51,7 @@ def send_incident_alert(metrics, issues, log_analysis=""):
     ]
     
     if log_analysis:
-        fields.append({"title": "Root Cause", "value": log_analysis[:200], "short": False})
+        fields.append({"title": "Root Cause", "value": log_analysis[:500], "short": False})
     
     return send_slack_alert(
         "System Alert - Issues Detected",

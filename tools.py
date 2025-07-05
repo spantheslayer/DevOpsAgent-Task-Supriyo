@@ -29,7 +29,7 @@ Issues Detected: {', '.join(issues)}
 System Logs (Recent):
 {system_logs[:500] if system_logs else "No recent logs available"}
 
-Provide a brief root cause analysis (max 150 words) focusing on:
+Provide a brief analysis (max 150 words) focusing on:
 1. Most likely cause of the issues
 2. Immediate impact
 3. Recommended next steps
