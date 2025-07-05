@@ -66,10 +66,15 @@ def network_monitor():
 def system_overview():
     """Get comprehensive system metrics overview and send Slack alerts if issues detected"""
     try:
-        cpu_result = prometheus_monitor()
-        memory_result = memory_monitor()
-        disk_result = disk_monitor()
-        network_result = network_monitor()
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        network = psutil.net_io_counters()
+        
+        cpu_result = f"CPU spike detected: {cpu_usage:.2f}%" if cpu_usage > CPU_THRESHOLD else f"CPU normal: {cpu_usage:.2f}%"
+        memory_result = f"Memory spike detected: {memory.percent:.2f}%" if memory.percent > MEMORY_THRESHOLD else f"Memory normal: {memory.percent:.2f}%"
+        disk_result = f"Disk spike detected: {disk.percent:.2f}%" if disk.percent > DISK_THRESHOLD else f"Disk normal: {disk.percent:.2f}%"
+        network_result = f"Network normal: {network.bytes_sent/1024/1024:.2f} MB sent"
         
         overview = f"""
 System Overview:
@@ -80,31 +85,24 @@ System Overview:
 """
         
         issues = []
-        metrics = {}
+        metrics = {
+            'cpu': f"{cpu_usage:.2f}%",
+            'memory': f"{memory.percent:.2f}%",
+            'disk': f"{disk.percent:.2f}%",
+            'network': f"{network.bytes_sent/1024/1024:.2f} MB"
+        }
         
-        if "spike detected" in cpu_result:
+        if cpu_usage > CPU_THRESHOLD:
             issues.append("CPU")
-            metrics['cpu'] = cpu_result.split(': ')[1]
-        else:
-            metrics['cpu'] = cpu_result.split(': ')[1]
             
-        if "spike detected" in memory_result:
+        if memory.percent > MEMORY_THRESHOLD:
             issues.append("Memory")
-            metrics['memory'] = memory_result.split(': ')[1]
-        else:
-            metrics['memory'] = memory_result.split(': ')[1]
             
-        if "spike detected" in disk_result:
+        if disk.percent > DISK_THRESHOLD:
             issues.append("Disk")
-            metrics['disk'] = disk_result.split(': ')[1]
-        else:
-            metrics['disk'] = disk_result.split(': ')[1]
             
-        if "spike detected" in network_result:
+        if network.bytes_sent/1024/1024 > NETWORK_THRESHOLD:
             issues.append("Network")
-            metrics['network'] = network_result.split(': ')[1]
-        else:
-            metrics['network'] = network_result.split(': ')[1]
         
         if issues:
             overview += f"\nISSUES DETECTED: {', '.join(issues)}"
