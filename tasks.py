@@ -1,15 +1,15 @@
 from crewai import Task
 from agents import detection_agent, remediation_agent
-from config import CPU_THRESHOLD
+from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD
 
-cpu_monitoring_task = Task(
-    description=f'Monitor current CPU usage using prometheus_monitor. Only proceed if CPU usage exceeds {CPU_THRESHOLD}% threshold. If threshold is exceeded, retrieve system logs from the incident timeframe and analyze them for actual root causes. Do not simulate or assume CPU spikes that do not exist.',
+system_monitoring_task = Task(
+    description=f'Monitor system metrics using system_overview. Check CPU (>{CPU_THRESHOLD}%), Memory (>{MEMORY_THRESHOLD}%), Disk (>{DISK_THRESHOLD}%), and Network (>{NETWORK_THRESHOLD} Mbps) thresholds. If any metric exceeds threshold, retrieve system logs and analyze for root causes. Do not simulate issues.',
     agent=detection_agent,
-    expected_output=f'Detection report only if real CPU spike detected above {CPU_THRESHOLD}%, with actual logs and genuine root cause analysis. If no spike detected, report normal status.'
+    expected_output='Detection report with all system metrics, identifying any issues above thresholds with actual logs and root cause analysis. Report normal status if no issues detected.'
 )
 
-remediation_task = Task(
-    description=f'Only execute if previous task detected an actual CPU spike above {CPU_THRESHOLD}%. Restart Docker service, verify system stability with real metrics, and confirm CPU levels returned to normal. Do not perform remediation unless there was a genuine detected issue.',
+comprehensive_remediation_task = Task(
+    description=f'Only execute if previous task detected actual issues above thresholds. Restart Docker service, verify all system metrics (CPU, memory, disk, network) returned to normal levels, and provide comprehensive verification report.',
     agent=remediation_agent,
-    expected_output='Remediation report with restart status and verification metrics only if remediation was actually needed and performed'
+    expected_output='Complete remediation report with restart status and verification of all system metrics returning to normal levels'
 )

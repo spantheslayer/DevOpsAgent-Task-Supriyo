@@ -3,7 +3,7 @@ import requests
 import subprocess
 import time
 import psutil
-from config import CPU_THRESHOLD
+from config import CPU_THRESHOLD, MEMORY_THRESHOLD, DISK_THRESHOLD, NETWORK_THRESHOLD
 
 @tool
 def prometheus_monitor():
@@ -18,6 +18,85 @@ def prometheus_monitor():
         return f"CPU normal: {cpu_usage:.2f}%"
     except Exception as e:
         return f"Error monitoring CPU: {str(e)}"
+
+@tool
+def memory_monitor():
+    """Query Prometheus for memory metrics and detect high usage"""
+    try:
+        response = requests.get('http://localhost:9090/api/v1/query?query=100*(1-node_memory_MemAvailable_bytes/node_memory_MemTotal_bytes)')
+        data = response.json()
+        memory_usage = float(data['data']['result'][0]['value'][1])
+        
+        if memory_usage > MEMORY_THRESHOLD:
+            return f"Memory spike detected: {memory_usage:.2f}%"
+        return f"Memory normal: {memory_usage:.2f}%"
+    except Exception as e:
+        return f"Error monitoring memory: {str(e)}"
+
+@tool
+def disk_monitor():
+    """Query Prometheus for disk metrics and detect high usage"""
+    try:
+        response = requests.get('http://localhost:9090/api/v1/query?query=100*(1-node_filesystem_avail_bytes{mountpoint="/"}/node_filesystem_size_bytes{mountpoint="/"})')
+        data = response.json()
+        disk_usage = float(data['data']['result'][0]['value'][1])
+        
+        if disk_usage > DISK_THRESHOLD:
+            return f"Disk spike detected: {disk_usage:.2f}%"
+        return f"Disk normal: {disk_usage:.2f}%"
+    except Exception as e:
+        return f"Error monitoring disk: {str(e)}"
+
+@tool
+def network_monitor():
+    """Query Prometheus for network metrics and detect high usage"""
+    try:
+        response = requests.get('http://localhost:9090/api/v1/query?query=rate(node_network_transmit_bytes_total{device="ens5"}[5m])*8/1000000')
+        data = response.json()
+        network_usage = float(data['data']['result'][0]['value'][1]) if data['data']['result'] else 0
+        
+        if network_usage > NETWORK_THRESHOLD:
+            return f"Network spike detected: {network_usage:.2f} Mbps"
+        return f"Network normal: {network_usage:.2f} Mbps"
+    except Exception as e:
+        return f"Error monitoring network: {str(e)}"
+
+@tool
+def system_overview():
+    """Get comprehensive system metrics overview"""
+    try:
+        cpu_result = prometheus_monitor()
+        memory_result = memory_monitor()
+        disk_result = disk_monitor()
+        network_result = network_monitor()
+        
+        overview = f"""
+System Overview:
+{cpu_result}
+{memory_result}
+{disk_result}
+{network_result}
+"""
+        
+        # Check if any metric exceeds threshold
+        issues = []
+        if "spike detected" in cpu_result:
+            issues.append("CPU")
+        if "spike detected" in memory_result:
+            issues.append("Memory")
+        if "spike detected" in disk_result:
+            issues.append("Disk")
+        if "spike detected" in network_result:
+            issues.append("Network")
+        
+        if issues:
+            overview += f"\nISSUES DETECTED: {', '.join(issues)}"
+        else:
+            overview += "\nAll systems normal"
+            
+        return overview
+    except Exception as e:
+        return f"Error getting system overview: {str(e)}"
 
 @tool 
 def log_analyzer():
@@ -49,27 +128,14 @@ def system_remediation():
                                      capture_output=True, text=True)
         service_status = status_result.stdout.strip()
         
-        # Check system metrics
-        cpu_percent = psutil.cpu_percent(interval=1)
-        memory_percent = psutil.virtual_memory().percent
-        disk_percent = psutil.disk_usage('/').percent
-        
-        # Check CPU via Prometheus directly
-        try:
-            response = requests.get('http://localhost:9090/api/v1/query?query=100-(avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))*100)')
-            data = response.json()
-            prometheus_cpu = float(data['data']['result'][0]['value'][1])
-            cpu_check = f"CPU normal: {prometheus_cpu:.2f}%"
-        except:
-            cpu_check = "Prometheus check failed"
+        # Get comprehensive system metrics
+        overview = system_overview()
         
         verification_report = f"""
 Service Restart: SUCCESS
 Docker Status: {service_status}
-Post-restart CPU: {cpu_percent:.1f}%
-Memory Usage: {memory_percent:.1f}%
-Disk Usage: {disk_percent:.1f}%
-Prometheus Check: {cpu_check}
+Post-restart System Status:
+{overview}
 System Stability: VERIFIED
 """
         
